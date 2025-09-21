@@ -1,0 +1,128 @@
+macOS 15.6， 如何彻底关闭 spotlight, 并清除以._开头文件
+好的，我们来处理这两个需求。
+
+重要提示: 您提到的 macOS 15.6 是一个未来的操作系统版本。以下提供的所有命令和步骤均基于当前和近期的 macOS 版本 (如 Sonoma, Sequoia)。它们有极大概率在未来的版本中继续有效，但不能完全保证。在执行任何系统级操作前，强烈建议您备份重要数据。
+
+第一部分：如何彻底关闭 Spotlight
+
+Spotlight 的核心是其索引功能。要“彻底关闭”它，我们的目标是停止并禁用其索引服务，这会阻止 mds_stores 和 mdworker 进程在后台运行和消耗资源。
+
+方法一：使用 mdutil (标准且推荐的方法)
+
+这是苹果官方提供的命令行工具，用于管理 Spotlight 索引，也是最安全的方法。
+
+打开“终端” (Terminal)
+您可以在“应用程序” -> “实用工具”文件夹中找到它，或者直接通过 Spotlight 搜索（在禁用它之前！）。
+
+禁用主硬盘的索引功能
+在终端中输入以下命令，然后按回车。系统会提示您输入管理员密码。
+
+Bash
+sudo mdutil -i off /
+sudo: 以管理员权限执行命令。
+
+mdutil: Spotlight 的管理工具。
+
+-i off: 关闭 (off) 指定宗卷 (volume) 的索引 (indexing)。
+
+/: 代表您的系统根目录，即主硬盘。
+
+删除现有的索引数据库 (可选，但推荐)
+为了释放空间，您可以删除已创建的索引文件。
+
+Bash
+sudo mdutil -E /
+-E: 擦除 (Erase) 现有索引。
+
+为所有其他连接的宗卷禁用索引
+如果您有外置硬盘或多个分区，Spotlight 可能也会为它们建立索引。您需要对每个宗卷重复此操作。
+首先，列出所有宗卷：
+
+Bash
+ls /Volumes
+然后为每个宗卷（例如名为 "My Passport" 的外置硬盘）禁用索引：
+
+Bash
+sudo mdutil -i off "/Volumes/My Passport"
+注意： 如果宗卷名称中包含空格，请务必使用引号将其括起来。
+
+执行完以上步骤后，Spotlight 的索引功能就已经被关闭了。Spotlight 搜索栏（Cmd + Space）可能仍然可以作为应用程序启动器使用，但它将不再索引您的文件内容，相关的后台进程也会停止活动。
+
+方法二：禁用启动守护进程 (更彻底，但有风险)
+
+如果您发现 mdutil 无法完全阻止相关进程，可以尝试直接禁用 Spotlight 的系统服务。此方法风险更高，可能导致某些依赖 Spotlight 接口的应用出现问题，请谨慎操作。
+
+Bash
+# 停止并禁用 Spotlight 服务
+sudo launchctl disable system/com.apple.metadata.mds
+sudo launchctl bootout system/com.apple.metadata.mds
+如何重新启用 Spotlight？
+如果您想恢复 Spotlight，只需执行相反的操作即可：
+
+Bash
+# 方法一恢复
+sudo mdutil -i on /
+
+# 方法二恢复
+sudo launchctl enable system/com.apple.metadata.mds
+sudo launchctl bootstrap system /System/Library/LaunchDaemons/com.apple.metadata.mds.plist
+第二部分：清除以 ._ 开头的文件
+
+这些以 ._ 开头的文件是 AppleDouble 文件，也叫作“资源分叉”文件。当您将文件存储在不支持 macOS 元数据的文件系统上时（例如 FAT32、ExFAT 的 U 盘，或某些网络服务器），macOS 会创建这些文件来保存图标、标签等元数据。
+
+方法一：使用 dot_clean (macOS 内置的最佳选择)
+
+dot_clean 是 macOS 内置的专用工具，它会尝试将 ._ 文件中的元数据合并回主文件，然后删除 ._ 文件。这是最理想和安全的方式。
+
+打开“终端”。
+
+使用 cd 命令进入您想清理的目录。
+例如，要清理桌面上的 "Work" 文件夹：
+
+Bash
+cd ~/Desktop/Work
+~ 代表您的用户主目录。
+
+运行 dot_clean 命令。
+
+Bash
+# 清理当前目录及其所有子目录
+dot_clean .
+或者，您可以直接指定一个路径，而无需进入该目录：
+
+Bash
+dot_clean /Users/yourusername/path/to/directory
+该命令会递归地清理指定目录下的所有 ._ 文件。
+
+方法二：使用 find 命令 (强大且通用)
+
+如果您想直接暴力删除所有 ._ 文件，而不进行任何合并，可以使用 find 命令。
+
+打开“终端”。
+
+进入您想清理的目录。
+
+Bash
+cd /path/to/your/directory
+执行查找并删除的命令。
+
+⚠️ 警告： 这个命令会立即删除文件，没有确认环节。建议先执行不带 -delete 的版本来预览将要被删除的文件列表。
+
+步骤 A (预览):
+
+Bash
+find . -name '._*'
+这会列出所有匹配的文件，让您检查一遍是否正确。
+
+步骤 B (执行删除):
+确认预览无误后，再执行删除命令。
+
+Bash
+find . -name '._*' -delete
+如何防止未来生成 ._ 文件？
+
+您无法完全阻止 macOS 创建这些文件，因为这是其保证跨文件系统兼容性的一种方式。但您可以阻止它在网络驱动器上创建这些文件：
+
+Bash
+defaults write com.apple.desktopservices DSDontWriteNetworkStores -bool true
+执行后，需要重启您的 Mac 或重启 Finder (killall Finder) 来使设置生效。但这只对网络共享有效，对本地的 U 盘等无效。
